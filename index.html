@@ -17,6 +17,13 @@
 </head>
 <body class="light-theme">
 
+  <!-- Fluid CSS Background Blobs -->
+  <div class="fluid-bg-blob blob-1"></div>
+  <div class="fluid-bg-blob blob-2"></div>
+  <div class="fluid-bg-blob blob-3"></div>
+  <div class="fluid-bg-blob blob-4"></div>
+  <div class="fluid-bg-blob blob-5"></div>
+
   <!-- ==========================================
        1. PROFILE SELECTION SCREEN
        ========================================== -->
@@ -30,6 +37,7 @@
         <button class="profile-btn" onclick="selectProfile(1)">
           <div class="avatar student1-avatar">🤖</div>
           <div class="profile-name" id="p1-display-name">Learner A</div>
+          <div class="profile-age" id="p1-display-age">Age: --</div>
           <div class="profile-rank" id="p1-display-rank">Script Kitten</div>
           <div class="profile-xp" id="p1-display-xp">0 XP</div>
         </button>
@@ -38,6 +46,7 @@
         <button class="profile-btn" onclick="selectProfile(2)">
           <div class="avatar student2-avatar">👾</div>
           <div class="profile-name" id="p2-display-name">Learner B</div>
+          <div class="profile-age" id="p2-display-age">Age: --</div>
           <div class="profile-rank" id="p2-display-rank">Script Kitten</div>
           <div class="profile-xp" id="p2-display-xp">0 XP</div>
         </button>
@@ -57,13 +66,41 @@
        2. ADMIN PASSWORD MODAL
        ========================================== -->
   <div id="admin-password-modal" class="modal-overlay">
-    <div class="small-modal">
-      <h2>Enter Admin Passcode</h2>
-      <p>Please type your parent passcode to access the tracking logs and settings.</p>
-      <input type="password" id="admin-passcode-input" placeholder="••••••••" onkeydown="handleAdminPasswordKey(event)">
+    <div class="small-modal onboarding-modal">
+      <h2 id="admin-modal-title">Enter Admin Passcode</h2>
+      <p id="admin-modal-desc">Please type your parent passcode to access the tracking logs and settings.</p>
+      
+      <!-- Login Fields (Shown by default, hidden in setup mode) -->
+      <div id="admin-login-section">
+        <input type="password" id="admin-passcode-input" placeholder="••••••••" class="input-text" onkeydown="handleAdminPasswordKey(event)">
+      </div>
+
+      <!-- Onboarding Setup Fields (Hidden by default, shown in setup mode) -->
+      <div id="admin-setup-section" style="display: none;">
+        <div class="setup-group">
+          <label class="setup-label">Set Secret Parent Passcode</label>
+          <input type="password" id="admin-passcode-setup-1" placeholder="Enter Admin Passcode" class="input-text" style="margin-bottom: 8px;">
+          <input type="password" id="admin-passcode-setup-2" placeholder="Confirm Admin Passcode" class="input-text" style="margin-bottom: 16px;">
+        </div>
+        
+        <div class="setup-grid">
+          <div class="setup-column">
+            <label class="setup-label">Learner 1 (Profile 1)</label>
+            <input type="text" id="setup-p1-name" placeholder="Name (e.g. Alex)" class="input-text" style="margin-bottom: 8px;">
+            <input type="number" id="setup-p1-age" placeholder="Age (e.g. 13)" class="input-text" min="1" max="100" style="margin-bottom: 16px;">
+          </div>
+          
+          <div class="setup-column">
+            <label class="setup-label">Learner 2 (Profile 2)</label>
+            <input type="text" id="setup-p2-name" placeholder="Name (e.g. Robin)" class="input-text" style="margin-bottom: 8px;">
+            <input type="number" id="setup-p2-age" placeholder="Age (e.g. 11)" class="input-text" min="1" max="100" style="margin-bottom: 16px;">
+          </div>
+        </div>
+      </div>
+
       <div class="modal-actions">
         <button class="btn btn-secondary" onclick="closeAdminPasswordModal()">Cancel</button>
-        <button class="btn btn-primary" onclick="verifyAdminPassword()">Unlock</button>
+        <button class="btn btn-primary" id="admin-passcode-submit-btn" onclick="verifyAdminPassword()">Unlock</button>
       </div>
       <div id="admin-passcode-error" class="error-text"></div>
     </div>
@@ -111,6 +148,15 @@
           </div>
           <div class="xp-progress-bg">
             <div id="xp-progress-bar" class="xp-progress-fill" style="width: 0%"></div>
+          </div>
+        </div>
+
+        <!-- Logged-in Profile Info -->
+        <div class="stat-bubble active-profile-bubble" title="Currently logged in profile">
+          <span class="stat-icon" id="header-avatar">🤖</span>
+          <div class="stat-labels">
+            <span class="stat-val" id="header-username">Learner A</span>
+            <span class="stat-desc" id="header-user-age">Age: --</span>
           </div>
         </div>
 
@@ -172,6 +218,12 @@
             <div class="no-certs">No chapters completed yet. Keep studying!</div>
           </div>
         </div>
+
+        <!-- Did You Know? Trivia Card -->
+        <div class="sidebar-trivia-card" onclick="rotateTrivia()">
+          <h4>💡 Did You Know?</h4>
+          <p id="sidebar-trivia-text">Click me to read a coding fact!</p>
+        </div>
       </aside>
 
       <!-- CONTENT PLAYBOOK WORKSPACE -->
@@ -183,6 +235,16 @@
             <button class="filter-btn" id="f-todo" onclick="filterStatus('todo')">To Do</button>
             <button class="filter-btn" id="f-done" onclick="filterStatus('done')">Completed</button>
           </div>
+        </div>
+
+        <!-- Fun Facts Dashboard Banner -->
+        <div class="fun-fact-banner" id="main-fun-fact-banner" onclick="rotateMainTrivia()">
+          <div class="fun-fact-icon">💡</div>
+          <div class="fun-fact-details">
+            <h3>Did You Know?</h3>
+            <p id="main-fun-fact-text">Tap here to load a fun coding fact!</p>
+          </div>
+          <div class="fun-fact-tap-hint">Tap for new fact 🔄</div>
         </div>
 
         <!-- Playbook Days Grid -->
@@ -207,7 +269,7 @@
           <h2 id="detail-title">Say Hello to Python!</h2>
           <span class="phase-tag" id="detail-phase-name">Phase 1: Basic Foundations</span>
         </div>
-        <div class="day-sfx-indicator" id="detail-badge-earned" title="Badge earned for this challenge">🏆 Gold Badge</div>
+        <div class="day-sfx-indicator" id="detail-badge-earned" title="Badge earned for this challenge" style="display: none;">🏆 Gold Badge</div>
       </div>
 
       <!-- Detail Grid Split -->
@@ -252,6 +314,7 @@
           <!-- Built-in Python Sandbox & Code Vault -->
           <div class="info-block sandbox-block">
             <h3>💻 Built-in Python Sandbox & Code Vault</h3>
+            <div id="sandbox-sibling-nudge" class="sibling-nudge-box"></div>
             <p class="subtitle">Write your code here and test it directly in the browser! It auto-saves.</p>
             <textarea id="detail-code-vault" placeholder="# Write your Python code here... (e.g. print('Hello World!'))" onchange="saveVaultCode()"></textarea>
             <div class="sandbox-actions">
@@ -273,6 +336,12 @@
             </div>
           </div>
         </div>
+      </div>
+      
+      <!-- Day Detail Footer / Navigation -->
+      <div class="day-detail-footer">
+        <button class="btn btn-secondary" onclick="closeDayDetail()">Close Challenge</button>
+        <button class="btn btn-primary" id="detail-footer-next-btn" onclick="openNextDay()">Next Day ➡️</button>
       </div>
     </div>
   </div>
@@ -449,14 +518,16 @@
           <h3>Profiles Configuration</h3>
           <div class="profiles-edit-grid">
             <div class="profile-edit-box">
-              <h4>Rename Profile 1</h4>
-              <input type="text" id="p1-rename-input" placeholder="Learner A" class="input-text">
-              <button class="btn btn-secondary btn-small mt-1" onclick="renameProfile(1)">Save Name</button>
+              <h4>Edit Profile 1</h4>
+              <input type="text" id="p1-rename-input" placeholder="Learner A Name" class="input-text" style="margin-bottom: 8px;">
+              <input type="number" id="p1-age-input" placeholder="Age" class="input-text" min="1" max="100">
+              <button class="btn btn-secondary btn-small mt-1" onclick="saveProfileConfig(1)">Save Profile</button>
             </div>
             <div class="profile-edit-box">
-              <h4>Rename Profile 2</h4>
-              <input type="text" id="p2-rename-input" placeholder="Learner B" class="input-text">
-              <button class="btn btn-secondary btn-small mt-1" onclick="renameProfile(2)">Save Name</button>
+              <h4>Edit Profile 2</h4>
+              <input type="text" id="p2-rename-input" placeholder="Learner B Name" class="input-text" style="margin-bottom: 8px;">
+              <input type="number" id="p2-age-input" placeholder="Age" class="input-text" min="1" max="100">
+              <button class="btn btn-secondary btn-small mt-1" onclick="saveProfileConfig(2)">Save Profile</button>
             </div>
           </div>
 

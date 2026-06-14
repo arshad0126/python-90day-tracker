@@ -11,6 +11,20 @@ let statusFilter = 'all'; // 'all', 'todo', 'done'
 let activeDayDetail = null;
 let hintLevelOpened = 0; // Tracks hint level opened for current active day
 let hintTimerInterval = null;
+let dayStartTime = null; // Tracks epoch milliseconds when detail modal opens
+
+const CODETRIVIA = [
+  "The first computer bug was a real moth found trapped in a computer relay by Grace Hopper in 1947!",
+  "The first computer programmer was Ada Lovelace in 1843, who wrote an algorithm for an early mechanical computer.",
+  "Python was named after the British comedy group 'Monty Python' and creator Guido van Rossum's love for their show.",
+  "The first hard disk drive, made by IBM in 1956, could hold only 5 megabytes of data and weighed over a ton!",
+  "The QWERTY keyboard layout was designed in 1873 to prevent mechanical typewriter keys from jamming by separating common letters.",
+  "In 1999, the Mars Climate Orbiter was lost because one software team used English units and another used metric units!",
+  "The first computer game was called 'Spacewar!' and was created in 1962 at MIT on a computer the size of a car.",
+  "More than 70% of professional software code relies on open-source libraries created by communities for free.",
+  "The word 'algorithm' is named after the 9th-century Persian mathematician Muhammad ibn Musa al-Khwarizmi.",
+  "CAPTCHA stands for 'Completely Automated Public Turing test to tell Computers and Humans Apart'."
+];
 
 // Ranks structure based on XP thresholds
 const RANKS = [
@@ -168,6 +182,15 @@ function initProfileScreen() {
   for (let i = 1; i <= 2; i++) {
     const data = loadProfileData(i);
     document.getElementById(`p${i}-display-name`).innerText = data.displayName;
+    
+    const ageEl = document.getElementById(`p${i}-display-age`);
+    if (data.age) {
+      ageEl.innerText = `Age: ${data.age}`;
+      ageEl.style.display = "block";
+    } else {
+      ageEl.style.display = "none";
+    }
+    
     document.getElementById(`p${i}-display-rank`).innerText = getRankTitle(data.xp);
     document.getElementById(`p${i}-display-xp`).innerText = `${data.xp} XP`;
   }
@@ -245,6 +268,22 @@ function updateHeader() {
   const needed = getXPNeededForNextRank(data.xp);
   document.getElementById("xp-val").innerText = `${data.xp} XP`;
   document.getElementById("xp-progress-bar").style.width = `${needed.percent}%`;
+
+  // Update header profile bubble
+  const usernameEl = document.getElementById("header-username");
+  const ageEl = document.getElementById("header-user-age");
+  const avatarEl = document.getElementById("header-avatar");
+  
+  if (usernameEl) usernameEl.innerText = data.displayName;
+  if (ageEl) {
+    if (data.age) {
+      ageEl.innerText = `Age: ${data.age}`;
+      ageEl.style.display = "block";
+    } else {
+      ageEl.style.display = "none";
+    }
+  }
+  if (avatarEl) avatarEl.innerText = activeProfile === 1 ? "🤖" : "👾";
 }
 
 // ==========================================================================
@@ -394,12 +433,29 @@ function renderDaysGrid() {
 // ==========================================================================
 // 7. DAY DETAILS PANEL & PROGRESSIVE HINT CONTROLLERS
 // ==========================================================================
+// ==========================================================================
+function formatTime(seconds) {
+  if (seconds < 60) return `${seconds}s`;
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}m ${s}s`;
+}
+
+function openNextDay() {
+  if (!activeDayDetail) return;
+  const nextDayNum = activeDayDetail.day + 1;
+  if (nextDayNum <= 90) {
+    openDayDetail(nextDayNum);
+  }
+}
+
 function openDayDetail(dayNum) {
   const day = window.CURRICULUM.find(d => d.day === dayNum);
   if (!day) return;
   
   activeDayDetail = day;
   hintLevelOpened = 0;
+  dayStartTime = Date.now(); // Start timer
   
   const data = loadProfileData(activeProfile);
   const completedInfo = data.completedDays[dayNum];
@@ -418,6 +474,41 @@ function openDayDetail(dayNum) {
   document.getElementById("detail-guide").innerText = day.parentGuide;
   document.getElementById("detail-challenge").innerText = day.challenge;
   
+  // Setup Next Day Button
+  const nextBtn = document.getElementById("detail-footer-next-btn");
+  if (dayNum === 90) {
+    nextBtn.style.display = "none";
+  } else {
+    nextBtn.style.display = "inline-flex";
+    const nextDayNum = dayNum + 1;
+    let isNextLocked = false;
+    if (data.dailyLockChecked) {
+      // Locked if this day (prev of next) is not complete
+      if (!isCompleted) {
+        isNextLocked = true;
+      }
+    }
+    
+    if (isNextLocked) {
+      nextBtn.innerText = "Next Day 🔒";
+      nextBtn.disabled = true;
+      nextBtn.style.opacity = 0.5;
+      nextBtn.style.cursor = "not-allowed";
+    } else {
+      nextBtn.innerText = "Next Day ➡️";
+      nextBtn.disabled = false;
+      nextBtn.style.opacity = 1;
+      nextBtn.style.cursor = "pointer";
+    }
+  }
+
+  // Setup Sibling / Speed Nudge & Start Live Stopwatch Timer
+  if (detailTimerInterval) {
+    clearInterval(detailTimerInterval);
+  }
+  updateDetailTimer(); // Update nudge content immediately
+  detailTimerInterval = setInterval(updateDetailTimer, 1000);
+
   // Setup Badge status label
   const badgeEarned = document.getElementById("detail-badge-earned");
   if (isCompleted) {
@@ -449,8 +540,10 @@ function openDayDetail(dayNum) {
     hintBtn.innerText = "Challenge Completed!";
   }
   
-  if (hintTimerInterval) {
-    clearInterval(hintTimerInterval);
+  if (hintTimerInterval && isCompleted) {
+    // Stop running stopwatch if already complete
+    clearInterval(detailTimerInterval);
+    detailTimerInterval = null;
   }
   
   playSound('coin');
@@ -461,8 +554,54 @@ function closeDayDetail() {
   if (hintTimerInterval) {
     clearInterval(hintTimerInterval);
   }
+  if (detailTimerInterval) {
+    clearInterval(detailTimerInterval);
+    detailTimerInterval = null;
+  }
   renderDaysGrid();
   updateHeader();
+}
+
+function updateDetailTimer() {
+  if (!activeDayDetail || !activeProfile || !dayStartTime) return;
+  
+  const elapsedSeconds = Math.floor((Date.now() - dayStartTime) / 1000);
+  const formattedTime = formatTime(elapsedSeconds);
+  
+  // Get sibling details
+  const otherProfileId = activeProfile === 1 ? 2 : 1;
+  const otherData = loadProfileData(otherProfileId);
+  const dayNum = activeDayDetail.day;
+  const otherCompleted = otherData.completedDays[dayNum];
+  
+  const nudgeBox = document.getElementById("sandbox-sibling-nudge");
+  if (!nudgeBox) return;
+  
+  let content = `⏱️ <strong>Time Spent:</strong> <span style="font-family: monospace; font-size: 14px; font-weight: 700; color: var(--accent-color); margin: 0 4px;">${formattedTime}</span> | `;
+  
+  if (otherCompleted && otherCompleted.completionTime) {
+    const otherTime = otherCompleted.completionTime;
+    const timeDiff = otherTime - elapsedSeconds;
+    
+    if (timeDiff > 0) {
+      content += `🔥 <strong>Record Beat:</strong> beat <strong>${otherData.displayName}</strong>'s time of <strong>${formatTime(otherTime)}</strong>! (Remain faster by ${formatTime(timeDiff)})`;
+    } else {
+      content += `🐢 <strong>Keep Coding:</strong> <strong>${otherData.displayName}</strong> finished this day in <strong>${formatTime(otherTime)}</strong>. Take your time!`;
+    }
+  } else {
+    // Speed bonuses targets
+    if (elapsedSeconds <= 60) {
+      content += `⚡ <strong>Super Sonic:</strong> finish in under 1 min for <strong>+100 XP</strong> bonus!`;
+    } else if (elapsedSeconds <= 180) {
+      content += `🚀 <strong>Speedy Coder:</strong> finish in under 3 min for <strong>+75 XP</strong> bonus!`;
+    } else if (elapsedSeconds <= 300) {
+      content += `🏃‍♂️ <strong>Quick Solver:</strong> finish in under 5 min for <strong>+50 XP</strong> bonus!`;
+    } else {
+      content += `🐢 <strong>Slow & Steady:</strong> speed bonus expired. focus on getting the solution right!`;
+    }
+  }
+  
+  nudgeBox.innerHTML = content;
 }
 
 function renderChecklist(day, isCompleted, completedInfo) {
@@ -698,6 +837,12 @@ function isDayAlreadyEarned(completedDayObj) {
 
 // Day completion logic
 function completeDay(dayNum, data) {
+  // Stop running stopwatch
+  if (detailTimerInterval) {
+    clearInterval(detailTimerInterval);
+    detailTimerInterval = null;
+  }
+
   // 1. Determine Badge based on Hint usage
   let badge = 'gold';
   if (hintLevelOpened === 2) badge = 'silver';
@@ -705,8 +850,29 @@ function completeDay(dayNum, data) {
   
   data.completedDays[dayNum].badge = badge;
   
+  // Calculate completion time spent
+  const durationSeconds = dayStartTime ? Math.floor((Date.now() - dayStartTime) / 1000) : 120;
+  data.completedDays[dayNum].completionTime = durationSeconds;
+  
   // 2. Award XP
-  const xpReward = getXPForDay(dayNum);
+  let xpReward = getXPForDay(dayNum);
+  
+  // Speed bonuses:
+  let speedBonusXP = 0;
+  let speedBonusTitle = "";
+  
+  if (durationSeconds <= 60) {
+    speedBonusXP = 100;
+    speedBonusTitle = "⚡ Super Sonic Bonus +100 XP!";
+  } else if (durationSeconds <= 180) {
+    speedBonusXP = 75;
+    speedBonusTitle = "🚀 Speedy Coder Bonus +75 XP!";
+  } else if (durationSeconds <= 300) {
+    speedBonusXP = 50;
+    speedBonusTitle = "🏃‍♂️ Quick Solver Bonus +50 XP!";
+  }
+  
+  xpReward += speedBonusXP;
   data.xp += xpReward;
   
   // 3. Update Streaks & Shields
@@ -721,16 +887,26 @@ function completeDay(dayNum, data) {
   
   // 6. Update UI labels
   const badgeEarned = document.getElementById("detail-badge-earned");
-  let badgeText = "🏆 Gold Badge Earned! " + xpReward + " XP Awarded!";
-  if (badge === 'silver') badgeText = "🥈 Silver Badge Earned. " + xpReward + " XP Awarded!";
-  if (badge === 'bronze') badgeText = "🥉 Bronze Badge Earned. " + xpReward + " XP Awarded!";
+  const speedText = speedBonusXP > 0 ? ` (${speedBonusTitle})` : "";
+  let badgeText = `🏆 Gold Badge Earned! +${xpReward} XP Awarded!${speedText}`;
+  if (badge === 'silver') badgeText = `🥈 Silver Badge Earned. +${xpReward} XP Awarded!${speedText}`;
+  if (badge === 'bronze') badgeText = `🥉 Bronze Badge Earned. +${xpReward} XP Awarded!${speedText}`;
   badgeEarned.innerText = badgeText;
   badgeEarned.style.display = "block";
+  
+  // Immediately unlock Next Day button on completion
+  const nextBtn = document.getElementById("detail-footer-next-btn");
+  if (nextBtn && dayNum < 90) {
+    nextBtn.innerText = "Next Day ➡️";
+    nextBtn.disabled = false;
+    nextBtn.style.opacity = 1;
+    nextBtn.style.cursor = "pointer";
+  }
   
   document.getElementById("btn-hint").disabled = true;
   document.getElementById("btn-hint").innerText = "Challenge Completed!";
   
-  logActivity(activeProfile, `Completed Day ${dayNum} with a ${badge.toUpperCase()} badge! Earned ${xpReward} XP.`);
+  logActivity(activeProfile, `Completed Day ${dayNum} with a ${badge.toUpperCase()} badge in ${formatTime(durationSeconds)}! Earned ${xpReward} XP.`);
   
   // 7. Check for Chapter Certificates
   checkChapterMilestone(dayNum, data);
@@ -910,9 +1086,35 @@ function renderCertsNav() {
 // ==========================================================================
 function openAdminPasswordModal() {
   document.getElementById("admin-passcode-error").innerText = "";
-  document.getElementById("admin-passcode-input").value = "";
   document.getElementById("admin-password-modal").classList.add("active");
-  document.getElementById("admin-passcode-input").focus();
+  
+  const loginSection = document.getElementById("admin-login-section");
+  const setupSection = document.getElementById("admin-setup-section");
+  const title = document.getElementById("admin-modal-title");
+  const desc = document.getElementById("admin-modal-desc");
+  const submitBtn = document.getElementById("admin-passcode-submit-btn");
+  
+  const currentPasscode = localStorage.getItem("python_tracker_admin_passcode");
+  
+  if (!currentPasscode) {
+    // Setup mode on first launch
+    title.innerText = "Setup Parent Onboarding";
+    desc.innerText = "Welcome! Set a secret parent passcode and configure your kids' profiles to start their Python adventure.";
+    loginSection.style.display = "none";
+    setupSection.style.display = "block";
+    submitBtn.innerText = "Complete Onboarding";
+    submitBtn.onclick = setupAdminPassword;
+    document.getElementById("admin-passcode-setup-1").focus();
+  } else {
+    // Standard verification mode
+    title.innerText = "Enter Admin Passcode";
+    desc.innerText = "Please type your parent passcode to access the tracking logs and settings.";
+    loginSection.style.display = "block";
+    setupSection.style.display = "none";
+    submitBtn.innerText = "Unlock";
+    submitBtn.onclick = verifyAdminPassword;
+    document.getElementById("admin-passcode-input").focus();
+  }
 }
 
 function closeAdminPasswordModal() {
@@ -925,9 +1127,57 @@ function handleAdminPasswordKey(event) {
   }
 }
 
+function handleAdminSetupKey(event) {
+  if (event.key === "Enter") {
+    setupAdminPassword();
+  }
+}
+
+function setupAdminPassword() {
+  const pin1 = document.getElementById("admin-passcode-setup-1").value.trim();
+  const pin2 = document.getElementById("admin-passcode-setup-2").value.trim();
+  
+  if (pin1.length < 4) {
+    document.getElementById("admin-passcode-error").innerText = "Passcode must be at least 4 characters!";
+    playSound('alert');
+    return;
+  }
+  
+  if (pin1 !== pin2) {
+    document.getElementById("admin-passcode-error").innerText = "Passcodes do not match! Try again.";
+    playSound('alert');
+    return;
+  }
+
+  const p1Name = document.getElementById("setup-p1-name").value.trim() || "Learner A";
+  const p1Age = document.getElementById("setup-p1-age").value.trim();
+  const p2Name = document.getElementById("setup-p2-name").value.trim() || "Learner B";
+  const p2Age = document.getElementById("setup-p2-age").value.trim();
+  
+  localStorage.setItem("python_tracker_admin_passcode", pin1);
+
+  // Initialize profiles with customized configurations
+  const p1Data = loadProfileData(1);
+  p1Data.displayName = p1Name;
+  p1Data.age = p1Age ? parseInt(p1Age) : null;
+  saveProfileData(1, p1Data);
+
+  const p2Data = loadProfileData(2);
+  p2Data.displayName = p2Name;
+  p2Data.age = p2Age ? parseInt(p2Age) : null;
+  saveProfileData(2, p2Data);
+
+  logActivity(null, `Completed parent onboarding. Configured profiles: ${p1Name} (Age: ${p1Age || 'N/A'}), ${p2Name} (Age: ${p2Age || 'N/A'})`);
+  
+  initProfileScreen(); // Refresh profile select screen labels
+  closeAdminPasswordModal();
+  openAdminDashboard();
+}
+
 function verifyAdminPassword() {
   const pin = document.getElementById("admin-passcode-input").value;
-  if (pin === "arshad0126") {
+  const savedPin = localStorage.getItem("python_tracker_admin_passcode");
+  if (savedPin && pin === savedPin) {
     closeAdminPasswordModal();
     openAdminDashboard();
   } else {
@@ -973,8 +1223,12 @@ function openAdminDashboard() {
   renderActivityLogsList();
   
   // Render edit inputs
-  document.getElementById("p1-rename-input").value = loadProfileData(1).displayName;
-  document.getElementById("p2-rename-input").value = loadProfileData(2).displayName;
+  const p1Data = loadProfileData(1);
+  const p2Data = loadProfileData(2);
+  document.getElementById("p1-rename-input").value = p1Data.displayName;
+  document.getElementById("p1-age-input").value = p1Data.age || "";
+  document.getElementById("p2-rename-input").value = p2Data.displayName;
+  document.getElementById("p2-age-input").value = p2Data.age || "";
   
   // Open modal overlay
   document.getElementById("parent-admin-modal").classList.add("active");
@@ -1085,19 +1339,28 @@ function toggleDailyLock(studentId) {
   logActivity(studentId, `Parent toggled daily locks restriction to: ${chk.checked}`);
 }
 
-function renameProfile(studentId) {
-  const input = document.getElementById(`p${studentId}-rename-input`);
-  const newName = input.value.trim();
-  if (!newName) return;
+function saveProfileConfig(studentId) {
+  const nameInput = document.getElementById(`p${studentId}-rename-input`);
+  const ageInput = document.getElementById(`p${studentId}-age-input`);
+  
+  const newName = nameInput.value.trim();
+  const newAge = ageInput.value.trim();
+  
+  if (!newName) {
+    alert("Name cannot be empty!");
+    return;
+  }
   
   const data = loadProfileData(studentId);
   const oldName = data.displayName;
   data.displayName = newName;
+  data.age = newAge ? parseInt(newAge) : null;
   saveProfileData(studentId, data);
   
-  logActivity(studentId, `Parent renamed profile from '${oldName}' to '${newName}'`);
-  alert("Profile renamed successfully!");
+  logActivity(studentId, `Parent updated profile config: '${oldName}' to '${newName}' (Age: ${newAge || 'N/A'})`);
+  alert("Profile configuration saved successfully!");
   openAdminDashboard();
+  initProfileScreen(); // Refresh select screen
 }
 
 function fullDataReset() {
@@ -1113,7 +1376,32 @@ function fullDataReset() {
 // ==========================================================================
 // 10. ENTRY INITS
 // ==========================================================================
+function rotateTrivia() {
+  if (typeof CODETRIVIA === 'undefined' || CODETRIVIA.length === 0) return;
+  const idx = Math.floor(Math.random() * CODETRIVIA.length);
+  const text = document.getElementById("sidebar-trivia-text");
+  if (text) {
+    text.innerText = CODETRIVIA[idx];
+  }
+}
+
+function rotateMainTrivia() {
+  if (typeof CODETRIVIA === 'undefined' || CODETRIVIA.length === 0) return;
+  const idx = Math.floor(Math.random() * CODETRIVIA.length);
+  const text = document.getElementById("main-fun-fact-text");
+  if (text) {
+    text.innerText = CODETRIVIA[idx];
+  }
+}
+
+// ==========================================================================
+// 10. ENTRY INITS
+// ==========================================================================
 window.onload = function() {
   initTheme();
   initProfileScreen();
+  rotateTrivia();
+  rotateMainTrivia();
+  setInterval(rotateTrivia, 25000); // Rotate coding trivia every 25 seconds
+  setInterval(rotateMainTrivia, 30000); // Rotate main banner trivia every 30 seconds
 };

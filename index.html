@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Python 90-Day Challenge Tracker</title>
+  <!-- Google Fonts: Outfit for headings, Inter for body -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <!-- Canvas Confetti Local -->
+  <script src="confetti.browser.min.js"></script>
+  <!-- Skulpt In-browser Python Execution Local -->
+  <script src="skulpt.min.js" type="text/javascript"></script>
+  <script src="skulpt-stdlib.js" type="text/javascript"></script>
+</head>
+<body class="light-theme">
+
+  <!-- Fluid CSS Background Blobs -->
+  <div class="fluid-bg-blob blob-1"></div>
+  <div class="fluid-bg-blob blob-2"></div>
+  <div class="fluid-bg-blob blob-3"></div>
+  <div class="fluid-bg-blob blob-4"></div>
+  <div class="fluid-bg-blob blob-5"></div>
+
+  <!-- ==========================================
+       1. PROFILE SELECTION SCREEN
+       ========================================== -->
+  <div id="profile-select-screen" class="modal-overlay active">
+    <div class="profile-card-container">
+      <h1 class="profile-title">Select Your Path</h1>
+      <p class="profile-subtitle">Choose your coding profile to continue your adventure</p>
+      
+      <div class="profiles-grid">
+        <!-- Student 1 Profile -->
+        <button class="profile-btn" onclick="selectProfile(1)">
+          <div class="avatar student1-avatar">🤖</div>
+          <div class="profile-name" id="p1-display-name">Learner A</div>
+          <div class="profile-age" id="p1-display-age">Age: --</div>
+          <div class="profile-rank" id="p1-display-rank">Script Kitten</div>
+          <div class="profile-xp" id="p1-display-xp">0 XP</div>
+        </button>
+
+        <!-- Student 2 Profile -->
+        <button class="profile-btn" onclick="selectProfile(2)">
+          <div class="avatar student2-avatar">👾</div>
+          <div class="profile-name" id="p2-display-name">Learner B</div>
+          <div class="profile-age" id="p2-display-age">Age: --</div>
+          <div class="profile-rank" id="p2-display-rank">Script Kitten</div>
+          <div class="profile-xp" id="p2-display-xp">0 XP</div>
+        </button>
+
+        <!-- Parent Admin Profile -->
+        <button class="profile-btn admin-btn" onclick="openAdminPasswordModal()">
+          <div class="avatar admin-avatar">🔑</div>
+          <div class="profile-name">Parent (Admin)</div>
+          <div class="profile-rank">System Master</div>
+          <div class="profile-xp">Passcode Protected</div>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==========================================
+       2. ADMIN PASSWORD MODAL
+       ========================================== -->
+  <div id="admin-password-modal" class="modal-overlay">
+    <div class="small-modal onboarding-modal">
+      <h2 id="admin-modal-title">Enter Admin Passcode</h2>
+      <p id="admin-modal-desc">Please type your parent passcode to access the tracking logs and settings.</p>
+      
+      <!-- Login Fields (Shown by default, hidden in setup mode) -->
+      <div id="admin-login-section">
+        <input type="password" id="admin-passcode-input" placeholder="••••••••" class="input-text" onkeydown="handleAdminPasswordKey(event)">
+      </div>
+
+      <!-- Onboarding Setup Fields (Hidden by default, shown in setup mode) -->
+      <div id="admin-setup-section" style="display: none;">
+        <div class="setup-group">
+          <label class="setup-label">Set Secret Parent Passcode</label>
+          <input type="password" id="admin-passcode-setup-1" placeholder="Enter Admin Passcode" class="input-text" style="margin-bottom: 8px;">
+          <input type="password" id="admin-passcode-setup-2" placeholder="Confirm Admin Passcode" class="input-text" style="margin-bottom: 16px;">
+        </div>
+        
+        <div class="setup-grid">
+          <div class="setup-column">
+            <label class="setup-label">Learner 1 (Profile 1)</label>
+            <input type="text" id="setup-p1-name" placeholder="Name (e.g. Alex)" class="input-text" style="margin-bottom: 8px;">
+            <input type="number" id="setup-p1-age" placeholder="Age (e.g. 13)" class="input-text" min="1" max="100" style="margin-bottom: 16px;">
+          </div>
+          
+          <div class="setup-column">
+            <label class="setup-label">Learner 2 (Profile 2)</label>
+            <input type="text" id="setup-p2-name" placeholder="Name (e.g. Robin)" class="input-text" style="margin-bottom: 8px;">
+            <input type="number" id="setup-p2-age" placeholder="Age (e.g. 11)" class="input-text" min="1" max="100" style="margin-bottom: 16px;">
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn btn-secondary" onclick="closeAdminPasswordModal()">Cancel</button>
+        <button class="btn btn-primary" id="admin-passcode-submit-btn" onclick="verifyAdminPassword()">Unlock</button>
+      </div>
+      <div id="admin-passcode-error" class="error-text"></div>
+    </div>
+  </div>
+
+  <!-- ==========================================
+       3. CORE APPLICATION CONTAINER
+       ========================================== -->
+  <div id="app-container">
+    
+    <!-- HEADER BAR -->
+    <header class="app-header">
+      <div class="header-logo">
+        <span class="logo-emoji">🐍</span>
+        <div class="logo-text">
+          <h1>Python Quest</h1>
+          <p>90-Day Code Playbook</p>
+        </div>
+      </div>
+
+      <div class="header-stats">
+        <!-- Streak Info -->
+        <div class="stat-bubble" title="Your consecutive days coding streak!">
+          <span class="stat-icon">🔥</span>
+          <div class="stat-labels">
+            <span class="stat-val" id="streak-val">0 days</span>
+            <span class="stat-desc">Streak</span>
+          </div>
+        </div>
+
+        <!-- Streak Freeze Shield Info -->
+        <div class="stat-bubble" title="Earned every 7-day streak! Protects you if you miss a day.">
+          <span class="stat-icon">🛡️</span>
+          <div class="stat-labels">
+            <span class="stat-val" id="shields-val">0 / 3</span>
+            <span class="stat-desc">Streak Shield</span>
+          </div>
+        </div>
+
+        <!-- Current XP & Rank -->
+        <div class="xp-container">
+          <div class="xp-labels">
+            <span id="rank-title" class="rank-title">Script Kitten</span>
+            <span id="xp-val" class="xp-val">0 / 100 XP</span>
+          </div>
+          <div class="xp-progress-bg">
+            <div id="xp-progress-bar" class="xp-progress-fill" style="width: 0%"></div>
+          </div>
+        </div>
+
+        <!-- Logged-in Profile Info -->
+        <div class="stat-bubble active-profile-bubble" title="Currently logged in profile">
+          <span class="stat-icon" id="header-avatar">🤖</span>
+          <div class="stat-labels">
+            <span class="stat-val" id="header-username">Learner A</span>
+            <span class="stat-desc" id="header-user-age">Age: --</span>
+          </div>
+        </div>
+
+        <!-- Mute Sound Controls -->
+        <button id="sound-toggle" class="header-btn" onclick="toggleMute()" title="Toggle sounds">🔊</button>
+        
+        <!-- Switch Profile Button -->
+        <button id="switch-profile-btn" class="btn btn-secondary" onclick="logoutProfile()">Switch User</button>
+      </div>
+    </header>
+
+    <!-- MAIN BODY LAYOUT -->
+    <div class="main-layout">
+      <!-- SIDEBAR SELECTOR -->
+      <aside class="chapter-sidebar">
+        <h3>Adventure Chapters</h3>
+        <nav class="chapter-nav">
+          <button class="nav-chapter-btn active" onclick="filterChapter(0)" id="chapter-btn-0">
+            <span class="nav-num">All</span>
+            <span class="nav-name">Full 90 Days</span>
+          </button>
+          <button class="nav-chapter-btn" onclick="filterChapter(1)" id="chapter-btn-1">
+            <span class="nav-num">1</span>
+            <span class="nav-name">Basic Foundations <span class="days-badge">1-15</span></span>
+          </button>
+          <button class="nav-chapter-btn" onclick="filterChapter(2)" id="chapter-btn-2">
+            <span class="nav-num">2</span>
+            <span class="nav-name">Logic & Decisions <span class="days-badge">16-30</span></span>
+          </button>
+          <button class="nav-chapter-btn" onclick="filterChapter(3)" id="chapter-btn-3">
+            <span class="nav-num">3</span>
+            <span class="nav-name">Loops & Repetition <span class="days-badge">31-45</span></span>
+          </button>
+          <button class="nav-chapter-btn" onclick="filterChapter(4)" id="chapter-btn-4">
+            <span class="nav-num">4</span>
+            <span class="nav-name">Lists & Sequences <span class="days-badge">46-60</span></span>
+          </button>
+          <button class="nav-chapter-btn" onclick="filterChapter(5)" id="chapter-btn-5">
+            <span class="nav-num">5</span>
+            <span class="nav-name">Dicts & Collections <span class="days-badge">61-70</span></span>
+          </button>
+          <button class="nav-chapter-btn" onclick="filterChapter(6)" id="chapter-btn-6">
+            <span class="nav-num">6</span>
+            <span class="nav-name">Reusable Functions <span class="days-badge">71-80</span></span>
+          </button>
+          <button class="nav-chapter-btn" onclick="filterChapter(7)" id="chapter-btn-7">
+            <span class="nav-num">7</span>
+            <span class="nav-name">Imports & Graphics <span class="days-badge">81-85</span></span>
+          </button>
+          <button class="nav-chapter-btn" onclick="filterChapter(8)" id="chapter-btn-8">
+            <span class="nav-num">8</span>
+            <span class="nav-name">Files & Capstone <span class="days-badge">86-90</span></span>
+          </button>
+        </nav>
+
+        <div class="sidebar-certificates">
+          <h4>Unlocked Certificates</h4>
+          <div id="unlocked-certs-list" class="certs-list">
+            <div class="no-certs">No chapters completed yet. Keep studying!</div>
+          </div>
+        </div>
+
+        <!-- Did You Know? Trivia Card -->
+        <div class="sidebar-trivia-card" onclick="rotateTrivia()">
+          <h4>💡 Did You Know?</h4>
+          <p id="sidebar-trivia-text">Click me to read a coding fact!</p>
+        </div>
+      </aside>
+
+      <!-- CONTENT PLAYBOOK WORKSPACE -->
+      <main class="playbook-content">
+        <div class="content-toolbar">
+          <h2 id="current-chapter-view-title">All Chapters</h2>
+          <div class="filter-controls">
+            <button class="filter-btn active" id="f-all" onclick="filterStatus('all')">All Days</button>
+            <button class="filter-btn" id="f-todo" onclick="filterStatus('todo')">To Do</button>
+            <button class="filter-btn" id="f-done" onclick="filterStatus('done')">Completed</button>
+          </div>
+        </div>
+
+        <!-- Fun Facts Dashboard Banner -->
+        <div class="fun-fact-banner" id="main-fun-fact-banner" onclick="rotateMainTrivia()">
+          <div class="fun-fact-icon">💡</div>
+          <div class="fun-fact-details">
+            <h3>Did You Know?</h3>
+            <p id="main-fun-fact-text">Tap here to load a fun coding fact!</p>
+          </div>
+          <div class="fun-fact-tap-hint">Tap for new fact 🔄</div>
+        </div>
+
+        <!-- Playbook Days Grid -->
+        <div class="playbook-grid" id="playbook-grid">
+          <!-- Dynamically populated by app.js -->
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- ==========================================
+       4. DAY DETAILS LIGHTBOX MODAL
+       ========================================== -->
+  <div id="day-detail-modal" class="modal-overlay">
+    <div class="detail-modal">
+      <button class="close-modal-btn" onclick="closeDayDetail()">&times;</button>
+      
+      <!-- Day Header -->
+      <div class="day-detail-header">
+        <div class="day-badge-large" id="detail-day-num">Day 1</div>
+        <div class="day-detail-header-text">
+          <h2 id="detail-title">Say Hello to Python!</h2>
+          <span class="phase-tag" id="detail-phase-name">Phase 1: Basic Foundations</span>
+        </div>
+        <div class="day-sfx-indicator" id="detail-badge-earned" title="Badge earned for this challenge" style="display: none;">🏆 Gold Badge</div>
+      </div>
+
+      <!-- Detail Grid Split -->
+      <div class="day-detail-grid">
+        <!-- LEFT COLUMN: Lore & Concepts -->
+        <div class="detail-info-pane">
+          <div class="info-block lore-block">
+            <h3>🎮 Coding Lore</h3>
+            <p id="detail-lore">Did you know? Python was named after 'Monty Python’s Flying Circus'...</p>
+          </div>
+
+          <div class="info-block concept-block">
+            <h3>💡 The Concept</h3>
+            <p id="detail-concept">We print text inside quotes...</p>
+          </div>
+
+          <div class="info-block guide-block">
+            <h3>👨‍🏫 Parent's Teaching Guideline</h3>
+            <p id="detail-guide">Have them write their greeting to you...</p>
+          </div>
+        </div>
+
+        <!-- RIGHT COLUMN: Coding Tasks & Exporter -->
+        <div class="detail-action-pane">
+          <!-- Sub-Task Checklist (Guides them step-by-step) -->
+          <div class="info-block checklist-block">
+            <h3>📝 Step-by-Step Missions</h3>
+            <ul id="checklist-tasks" class="tasks-ul">
+              <!-- Dynamically populated -->
+            </ul>
+          </div>
+
+          <!-- The Challenge Question -->
+          <div class="info-block challenge-block">
+            <h3>⚔️ The Challenge</h3>
+            <p id="detail-challenge">Write a program that prints your name...</p>
+            <button class="btn btn-accent btn-small" id="btn-download-starter" onclick="downloadStarterFile()">
+              📥 Download Starter Script (.py)
+            </button>
+          </div>
+
+          <!-- Built-in Python Sandbox & Code Vault -->
+          <div class="info-block sandbox-block">
+            <h3>💻 Built-in Python Sandbox & Code Vault</h3>
+            <div id="sandbox-sibling-nudge" class="sibling-nudge-box"></div>
+            <p class="subtitle">Write your code here and test it directly in the browser! It auto-saves.</p>
+            <textarea id="detail-code-vault" placeholder="# Write your Python code here... (e.g. print('Hello World!'))" onchange="saveVaultCode()"></textarea>
+            <div class="sandbox-actions">
+              <button class="btn btn-primary btn-small" onclick="runSandboxCode('detail-code-vault', 'detail-console-output')">▶ Run Code</button>
+              <button class="btn btn-secondary btn-small" onclick="clearConsole('detail-console-output')">Clear Console</button>
+            </div>
+            <div class="console-title">Console Output:</div>
+            <pre id="detail-console-output" class="console-output"></pre>
+          </div>
+
+          <!-- Hints Container -->
+          <div class="info-block hints-block">
+            <h3>💡 Progressive Help System</h3>
+            <div id="hints-control-box">
+              <button class="btn btn-secondary btn-full" id="btn-hint" onclick="triggerNextHint()">Get Hint (Level 1)</button>
+              <div id="hint-display-box" class="hint-output-box">
+                <!-- Hint outputs show here -->
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Day Detail Footer / Navigation -->
+      <div class="day-detail-footer">
+        <button class="btn btn-secondary" onclick="closeDayDetail()">Close Challenge</button>
+        <button class="btn btn-primary" id="detail-footer-next-btn" onclick="openNextDay()">Next Day ➡️</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==========================================
+       5. CERTIFICATE MODAL
+       ========================================== -->
+  <div id="certificate-modal" class="modal-overlay">
+    <div class="certificate-layout" id="certificate-frame">
+      <button class="close-modal-btn no-print" onclick="closeCertModal()">&times;</button>
+      
+      <div class="cert-border-outer">
+        <div class="cert-border-inner">
+          <div class="cert-crown">📜</div>
+          <h1 class="cert-headline">Certificate of Achievement</h1>
+          <p class="cert-subtext">This is proudly presented to</p>
+          <div class="cert-student-name" id="cert-student-name">Alex</div>
+          <p class="cert-achievement-text" id="cert-achievement-text">
+            For successfully completing the 60-Day Python challenge...
+          </p>
+          
+          <div class="cert-meta-grid">
+            <div class="cert-meta-item">
+              <span class="cert-meta-label">Date Completed</span>
+              <span class="cert-meta-val" id="cert-date-val">June 14, 2026</span>
+            </div>
+            <div class="cert-meta-item">
+              <span class="cert-meta-label">Pass Rank Status</span>
+              <span class="cert-meta-val" id="cert-rank-val">Python Squire</span>
+            </div>
+            <div class="cert-meta-item">
+              <span class="cert-meta-label">Verification signature</span>
+              <span class="cert-meta-val sig" id="cert-signature-val">Parent Signed</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <div class="cert-actions no-print">
+        <button class="btn btn-secondary" onclick="closeCertModal()">Close</button>
+        <button class="btn btn-primary" onclick="printCertificate()">🖨️ Print Certificate</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==========================================
+       6. PARENT ADMIN DASHBOARD MODAL
+       ========================================== -->
+  <div id="parent-admin-modal" class="modal-overlay">
+    <div class="admin-modal">
+      <button class="close-modal-btn" onclick="closeAdminDashboard()">&times;</button>
+      
+      <div class="admin-header">
+        <h2>🛡️ Parent Control & Administrator Dashboard</h2>
+        <p>Monitor profiles, manage streaks, unlock lockouts, and view activity logs.</p>
+      </div>
+
+      <div class="admin-tabs">
+        <button class="admin-tab-btn active" id="tab-btn-stats" onclick="switchAdminTab('stats')">📊 Student Stats</button>
+        <button class="admin-tab-btn" id="tab-btn-logs" onclick="switchAdminTab('logs')">📜 Activity Audit Log</button>
+        <button class="admin-tab-btn" id="tab-btn-settings" onclick="switchAdminTab('settings')">⚙️ Admin Settings</button>
+      </div>
+
+      <!-- Tab Content: Student Stats -->
+      <div class="admin-tab-content active" id="admin-tab-stats">
+        <div class="admin-stats-grid">
+          <!-- Learner 1 Admin Card -->
+          <div class="admin-student-card">
+            <div class="admin-card-header">
+              <span class="avatar">🤖</span>
+              <h3 id="admin-p1-name">Learner A</h3>
+            </div>
+            <table class="stats-table">
+              <tr><td>Current XP:</td><td class="bold" id="admin-p1-xp">0 XP</td></tr>
+              <tr><td>Rank Title:</td><td class="bold" id="admin-p1-rank">Script Kitten</td></tr>
+              <tr><td>Day Streak:</td><td class="bold" id="admin-p1-streak">0 days</td></tr>
+              <tr><td>Streak Shields:</td><td class="bold" id="admin-p1-shields">0 / 3</td></tr>
+              <tr><td>Gold Badges:</td><td class="bold" id="admin-p1-golds">🏆 0</td></tr>
+              <tr><td>Silver Badges:</td><td class="bold" id="admin-p1-silvers">🥈 0</td></tr>
+              <tr><td>Bronze Badges:</td><td class="bold" id="admin-p1-bronzes">🥉 0</td></tr>
+            </table>
+
+            <!-- Quick Sign off controls -->
+            <div class="admin-quick-signoff">
+              <h4>Review Code & Sign Off</h4>
+              <div class="signoff-controls">
+                <select id="admin-p1-select-day" class="input-select">
+                  <!-- Options filled dynamically -->
+                </select>
+                <button class="btn btn-primary btn-small" onclick="adminSignoff(1)">Stamp Sign-Off</button>
+              </div>
+              <div class="code-viewer-box">
+                <h5>Saved Code Vault:</h5>
+                <textarea id="admin-p1-code-viewer" class="code-view-textarea" placeholder="Select a day to view their saved code..."></textarea>
+                <div class="sandbox-actions mt-1">
+                  <button class="btn btn-accent btn-small" onclick="runSandboxCode('admin-p1-code-viewer', 'admin-p1-console-output')">Run Student Code</button>
+                </div>
+                <pre id="admin-p1-console-output" class="console-output" style="max-height: 80px; font-size: 11px; margin-top: 6px; display: none;"></pre>
+              </div>
+            </div>
+          </div>
+
+          <!-- Learner 2 Admin Card -->
+          <div class="admin-student-card">
+            <div class="admin-card-header">
+              <span class="avatar">👾</span>
+              <h3 id="admin-p2-name">Learner B</h3>
+            </div>
+            <table class="stats-table">
+              <tr><td>Current XP:</td><td class="bold" id="admin-p2-xp">0 XP</td></tr>
+              <tr><td>Rank Title:</td><td class="bold" id="admin-p2-rank">Script Kitten</td></tr>
+              <tr><td>Day Streak:</td><td class="bold" id="admin-p2-streak">0 days</td></tr>
+              <tr><td>Streak Shields:</td><td class="bold" id="admin-p2-shields">0 / 3</td></tr>
+              <tr><td>Gold Badges:</td><td class="bold" id="admin-p2-golds">🏆 0</td></tr>
+              <tr><td>Silver Badges:</td><td class="bold" id="admin-p2-silvers">🥈 0</td></tr>
+              <tr><td>Bronze Badges:</td><td class="bold" id="admin-p2-bronzes">🥉 0</td></tr>
+            </table>
+
+            <!-- Quick Sign off controls -->
+            <div class="admin-quick-signoff">
+              <h4>Review Code & Sign Off</h4>
+              <div class="signoff-controls">
+                <select id="admin-p2-select-day" class="input-select">
+                  <!-- Options filled dynamically -->
+                </select>
+                <button class="btn btn-primary btn-small" onclick="adminSignoff(2)">Stamp Sign-Off</button>
+              </div>
+              <div class="code-viewer-box">
+                <h5>Saved Code Vault:</h5>
+                <textarea id="admin-p2-code-viewer" class="code-view-textarea" placeholder="Select a day to view their saved code..."></textarea>
+                <div class="sandbox-actions mt-1">
+                  <button class="btn btn-accent btn-small" onclick="runSandboxCode('admin-p2-code-viewer', 'admin-p2-console-output')">Run Student Code</button>
+                </div>
+                <pre id="admin-p2-console-output" class="console-output" style="max-height: 80px; font-size: 11px; margin-top: 6px; display: none;"></pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab Content: Audit Activity Log -->
+      <div class="admin-tab-content" id="admin-tab-logs">
+        <div class="logs-container">
+          <div class="logs-toolbar">
+            <h3>Chronological Audit Trail</h3>
+            <button class="btn btn-secondary btn-small" onclick="clearActivityLogs()">Clear Log History</button>
+          </div>
+          <div class="logs-list-wrapper">
+            <ul id="admin-logs-ul" class="logs-ul">
+              <!-- Logs populated dynamically -->
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab Content: Settings -->
+      <div class="admin-tab-content" id="admin-tab-settings">
+        <div class="admin-settings-panel">
+          <h3>Daily Unlock Pace Locks</h3>
+          <p class="subtitle">Restrict learners to unlocking a maximum of one day's lesson per calendar day.</p>
+          
+          <div class="settings-row">
+            <label for="admin-p1-lock-toggle" id="admin-p1-lock-label">Lock future days for Learner A</label>
+            <input type="checkbox" id="admin-p1-lock-toggle" class="toggle-checkbox" onchange="toggleDailyLock(1)">
+          </div>
+          
+          <div class="settings-row">
+            <label for="admin-p2-lock-toggle" id="admin-p2-lock-label">Lock future days for Learner B</label>
+            <input type="checkbox" id="admin-p2-lock-toggle" class="toggle-checkbox" onchange="toggleDailyLock(2)">
+          </div>
+
+          <hr class="admin-divider">
+
+          <h3>Profiles Configuration</h3>
+          <div class="profiles-edit-grid">
+            <div class="profile-edit-box">
+              <h4>Edit Profile 1</h4>
+              <input type="text" id="p1-rename-input" placeholder="Learner A Name" class="input-text" style="margin-bottom: 8px;">
+              <input type="number" id="p1-age-input" placeholder="Age" class="input-text" min="1" max="100">
+              <button class="btn btn-secondary btn-small mt-1" onclick="saveProfileConfig(1)">Save Profile</button>
+            </div>
+            <div class="profile-edit-box">
+              <h4>Edit Profile 2</h4>
+              <input type="text" id="p2-rename-input" placeholder="Learner B Name" class="input-text" style="margin-bottom: 8px;">
+              <input type="number" id="p2-age-input" placeholder="Age" class="input-text" min="1" max="100">
+              <button class="btn btn-secondary btn-small mt-1" onclick="saveProfileConfig(2)">Save Profile</button>
+            </div>
+          </div>
+
+          <hr class="admin-divider">
+
+          <h3>Data Reset Controls</h3>
+          <div class="reset-buttons">
+            <button class="btn btn-danger" onclick="fullDataReset()">⚠️ Wipe & Reset All Profile Data</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="admin-footer">
+        <button class="btn btn-secondary" onclick="closeAdminDashboard()">Close Panel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==========================================
+       7. FLOATING CONTROLS (THEME SWITCH BUTTON)
+       ========================================== -->
+  <button id="theme-floating-toggle" onclick="toggleTheme()" title="Switch Themes">
+    <span class="theme-icon">🌙</span>
+  </button>
+
+  <!-- Loader Script -->
+  <script src="curriculum.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

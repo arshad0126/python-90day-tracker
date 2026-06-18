@@ -12,6 +12,7 @@ let activeDayDetail = null;
 let hintLevelOpened = 0; // Tracks hint level opened for current active day
 let hintTimerInterval = null;
 let dayStartTime = null; // Tracks epoch milliseconds when detail modal opens
+let detailTimerInterval = null;
 
 const CODETRIVIA = [
   "The first computer bug was a real moth found trapped in a computer relay by Grace Hopper in 1947!",
@@ -49,133 +50,8 @@ const PHASE_METADATA = {
   8: { title: "Files & Capstone", days: [86, 90], cert: "Grand Master Python Code Wizard" }
 };
 
-// ==========================================================================
-// 2. AUDIO SYNTHESIZER MODULE (Web Audio API)
-// ==========================================================================
-let audioCtx = null;
-
-function getAudioContext() {
-  if (!audioCtx) {
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  }
-  if (audioCtx.state === 'suspended') {
-    audioCtx.resume();
-  }
-  return audioCtx;
-}
-
-function playSound(type) {
-  if (isMuted) return;
-  try {
-    const ctx = getAudioContext();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-
-    const now = ctx.currentTime;
-
-    if (type === 'coin') {
-      // Satisfying retro coin pickup (ascending pitch)
-      osc.type = 'square';
-      osc.frequency.setValueAtTime(587.33, now); // D5
-      osc.frequency.setValueAtTime(880, now + 0.1); // A5
-      gain.gain.setValueAtTime(0.05, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
-      osc.start(now);
-      osc.stop(now + 0.25);
-    } else if (type === 'levelup') {
-      // Ascending chord fanfare
-      osc.type = 'triangle';
-      const notes = [261.63, 329.63, 392.00, 523.25]; // C chord
-      notes.forEach((freq, idx) => {
-        const timeOffset = idx * 0.08;
-        const noteOsc = ctx.createOscillator();
-        const noteGain = ctx.createGain();
-        noteOsc.type = 'triangle';
-        noteOsc.connect(noteGain);
-        noteGain.connect(ctx.destination);
-        noteOsc.frequency.setValueAtTime(freq, now + timeOffset);
-        noteGain.gain.setValueAtTime(0.06, now + timeOffset);
-        noteGain.gain.exponentialRampToValueAtTime(0.001, now + timeOffset + 0.3);
-        noteOsc.start(now + timeOffset);
-        noteOsc.stop(now + timeOffset + 0.3);
-      });
-    } else if (type === 'alert') {
-      // Quick synth alert
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(220, now);
-      osc.frequency.exponentialRampToValueAtTime(110, now + 0.15);
-      gain.gain.setValueAtTime(0.08, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
-      osc.start(now);
-      osc.stop(now + 0.15);
-    }
-  } catch (e) {
-    console.warn("Audio Context failed: ", e);
-  }
-}
-
-// ==========================================================================
-// 3. STORAGE & PROFILE CONTROLLERS
-// ==========================================================================
-function getProfileKey(profileId) {
-  return `python_tracker_profile_${profileId}`;
-}
-
-function getDefaultProfileData(defaultName) {
-  return {
-    displayName: defaultName,
-    xp: 0,
-    streak: 0,
-    shields: 0,
-    lastCompletedDate: null,
-    dailyLockChecked: true, // limit to 1 per day
-    completedDays: {}, // dayNum -> { badge: 'gold'/'silver'/'bronze', code: '', parentSigned: false }
-    unlockedCerts: []
-  };
-}
-
-function loadProfileData(profileId) {
-  const key = getProfileKey(profileId);
-  let data = localStorage.getItem(key);
-  if (!data) {
-    const defaultName = profileId === 1 ? "Learner A" : "Learner B";
-    data = getDefaultProfileData(defaultName);
-    saveProfileData(profileId, data);
-  } else {
-    data = JSON.parse(data);
-  }
-  return data;
-}
-
-function saveProfileData(profileId, data) {
-  const key = getProfileKey(profileId);
-  localStorage.setItem(key, JSON.stringify(data));
-}
-
-// Activity logging (System Audit Trail)
-function logActivity(profileId, message) {
-  const logKey = "python_tracker_activity_log";
-  let logs = localStorage.getItem(logKey);
-  logs = logs ? JSON.parse(logs) : [];
-  
-  const timestamp = new Date().toLocaleString();
-  const profileName = profileId ? loadProfileData(profileId).displayName : "Parent (Admin)";
-  
-  logs.unshift({
-    timestamp,
-    profileName,
-    message
-  });
-  
-  // Cap logs to 200 items to conserve memory
-  if (logs.length > 200) {
-    logs.pop();
-  }
-  
-  localStorage.setItem(logKey, JSON.stringify(logs));
-}
+// Note: Section 2 (Audio Synthesizer) and Section 3 (Storage Controllers)
+// have been refactored into modular scripts: audio.js and storage.js
 
 // Initialize Profile selection display
 function initProfileScreen() {
@@ -371,9 +247,8 @@ function renderDaysGrid() {
   const todayStr = new Date().toDateString();
   
   days.forEach((day, idx) => {
-    const dayNum = day.day;
     const completedInfo = data.completedDays[dayNum];
-    const isCompleted = !!completedInfo;
+    const isCompleted = isDayAlreadyEarned(completedInfo);
     
     // Check Status Filter
     if (statusFilter === 'todo' && isCompleted) return;
@@ -382,10 +257,15 @@ function renderDaysGrid() {
     // Logic Lock (Pacing Controls)
     // Locked if previous day is not completed, AND parent has lock enabled.
     let isLocked = false;
-    if (dayNum > 1 && data.dailyLockChecked) {
-      const prevCompleted = !!data.completedDays[dayNum - 1];
+    if (dayNum > 1) {
+      const prevCompleted = isDayAlreadyEarned(data.completedDays[dayNum - 1]);
       if (!prevCompleted) {
         isLocked = true;
+      } else if (data.dailyLockChecked) {
+        const thisCompleted = isDayAlreadyEarned(completedInfo);
+        if (data.lastCompletedDate === todayStr && !thisCompleted) {
+          isLocked = true;
+        }
       }
     }
     
@@ -457,9 +337,8 @@ function openDayDetail(dayNum) {
   hintLevelOpened = 0;
   dayStartTime = Date.now(); // Start timer
   
-  const data = loadProfileData(activeProfile);
   const completedInfo = data.completedDays[dayNum];
-  const isCompleted = !!completedInfo;
+  const isCompleted = isDayAlreadyEarned(completedInfo);
   
   // Show modal overlay
   const modal = document.getElementById("day-detail-modal");
@@ -481,10 +360,10 @@ function openDayDetail(dayNum) {
   } else {
     nextBtn.style.display = "inline-flex";
     const nextDayNum = dayNum + 1;
-    let isNextLocked = false;
-    if (data.dailyLockChecked) {
-      // Locked if this day (prev of next) is not complete
-      if (!isCompleted) {
+    let isNextLocked = !isCompleted;
+    if (!isNextLocked && data.dailyLockChecked) {
+      const todayStr = new Date().toDateString();
+      if (data.lastCompletedDate === todayStr) {
         isNextLocked = true;
       }
     }
@@ -521,9 +400,9 @@ function openDayDetail(dayNum) {
     badgeEarned.style.display = "none";
   }
 
-  // Setup Code Vault textarea
-  const vaultTextarea = document.getElementById("detail-code-vault");
-  vaultTextarea.value = (completedInfo && completedInfo.code) ? completedInfo.code : "";
+  // Setup Code Vault CodeMirror editor
+  const initialCode = (completedInfo && completedInfo.code) ? completedInfo.code : (day.starterCode || "");
+  initializeCodeMirror(initialCode);
   
   // Setup Subtasks checklist
   renderChecklist(day, isCompleted, completedInfo);
@@ -654,7 +533,7 @@ function saveVaultCode() {
   const code = document.getElementById("detail-code-vault").value;
   
   if (!data.completedDays[dayNum]) {
-    data.completedDays[dayNum] = { badge: 'gold', tasks: [false, false, false, false], code: '', parentSigned: false };
+    data.completedDays[dayNum] = { badge: null, tasks: [false, false, false, false], code: '', parentSigned: false };
   }
   
   data.completedDays[dayNum].code = code;
@@ -662,70 +541,8 @@ function saveVaultCode() {
   logActivity(activeProfile, `Saved code vault backup for Day ${dayNum}`);
 }
 
-// In-browser Python Sandbox Execution (via Skulpt)
-function runSandboxCode(editorId, outputId) {
-  const code = document.getElementById(editorId).value;
-  const outputArea = document.getElementById(outputId);
-  outputArea.innerText = "Compiling and running...";
-  outputArea.style.display = "block";
-  
-  // Check if Skulpt loaded
-  if (typeof Sk === 'undefined') {
-    outputArea.innerText = "❌ Execution Error: Skulpt compiler library not loaded. Make sure you are online or CDN scripts are fetched.";
-    playSound('alert');
-    return;
-  }
-
-  // Clear output area
-  outputArea.innerText = "";
-
-  // Auto-save student work if they run it in the main editor
-  if (editorId === 'detail-code-vault') {
-    saveVaultCode();
-  }
-
-  function builtinRead(x) {
-    if (Sk.builtinFiles === undefined || Sk.builtinFiles["files"][x] === undefined)
-      throw "File not found: '" + x + "'";
-    return Sk.builtinFiles["files"][x];
-  }
-
-  Sk.configure({
-    output: function(text) {
-      outputArea.innerText += text;
-    },
-    read: builtinRead,
-    inputfun: function(promptText) {
-      return window.prompt(promptText || "Input requested:");
-    },
-    inputfunTakesPrompt: true
-  });
-
-  try {
-    const myPromise = Sk.misceval.asyncToPromise(function() {
-      return Sk.importMainWithBody("<stdin>", false, code, true);
-    });
-
-    myPromise.then(
-      function(mod) {
-        outputArea.innerText += "\n\n--- [Execution Finished] ---";
-      },
-      function(err) {
-        outputArea.innerText += "\n\n❌ Python Error:\n" + err.toString();
-        playSound('alert');
-      }
-    );
-  } catch (err) {
-    outputArea.innerText += "\n\n❌ Compiler Error:\n" + err.toString();
-    playSound('alert');
-  }
-}
-
-function clearConsole(outputId) {
-  const outputArea = document.getElementById(outputId);
-  outputArea.innerText = "";
-  outputArea.style.display = "none";
-}
+// Note: Skulpt Execution sandbox (runSandboxCode & clearConsole)
+// has been refactored into modular script: sandbox.js
 
 // Helper: Download a local `.py` script template
 function downloadStarterFile() {
@@ -798,7 +615,7 @@ function toggleTask(dayNum, taskIdx) {
   
   // Create day data object if empty
   if (!data.completedDays[dayNum]) {
-    data.completedDays[dayNum] = { badge: 'gold', tasks: [false, false, false, false], code: '', parentSigned: false };
+    data.completedDays[dayNum] = { badge: null, tasks: [false, false, false, false], code: '', parentSigned: false };
   }
   
   const chk = document.getElementById(`task-chk-${taskIdx}`);
@@ -832,7 +649,7 @@ function toggleTask(dayNum, taskIdx) {
 
 function isDayAlreadyEarned(completedDayObj) {
   // If badge is set and it is already counted in streak
-  return completedDayObj.badge === 'gold' || completedDayObj.badge === 'silver' || completedDayObj.badge === 'bronze';
+  return completedDayObj && (completedDayObj.badge === 'gold' || completedDayObj.badge === 'silver' || completedDayObj.badge === 'bronze');
 }
 
 // Day completion logic
@@ -897,10 +714,17 @@ function completeDay(dayNum, data) {
   // Immediately unlock Next Day button on completion
   const nextBtn = document.getElementById("detail-footer-next-btn");
   if (nextBtn && dayNum < 90) {
-    nextBtn.innerText = "Next Day ➡️";
-    nextBtn.disabled = false;
-    nextBtn.style.opacity = 1;
-    nextBtn.style.cursor = "pointer";
+    if (data.dailyLockChecked) {
+      nextBtn.innerText = "Next Day 🔒";
+      nextBtn.disabled = true;
+      nextBtn.style.opacity = 0.5;
+      nextBtn.style.cursor = "not-allowed";
+    } else {
+      nextBtn.innerText = "Next Day ➡️";
+      nextBtn.disabled = false;
+      nextBtn.style.opacity = 1;
+      nextBtn.style.cursor = "pointer";
+    }
   }
   
   document.getElementById("btn-hint").disabled = true;
@@ -1079,298 +903,6 @@ function renderCertsNav() {
     `;
     list.appendChild(item);
   });
-}
-
-// ==========================================================================
-// 9. PARENT PASSCODE CONTROLLER & ADMIN DASHBOARD
-// ==========================================================================
-function openAdminPasswordModal() {
-  document.getElementById("admin-passcode-error").innerText = "";
-  document.getElementById("admin-password-modal").classList.add("active");
-  
-  const loginSection = document.getElementById("admin-login-section");
-  const setupSection = document.getElementById("admin-setup-section");
-  const title = document.getElementById("admin-modal-title");
-  const desc = document.getElementById("admin-modal-desc");
-  const submitBtn = document.getElementById("admin-passcode-submit-btn");
-  
-  const currentPasscode = localStorage.getItem("python_tracker_admin_passcode");
-  
-  if (!currentPasscode) {
-    // Setup mode on first launch
-    title.innerText = "Setup Parent Onboarding";
-    desc.innerText = "Welcome! Set a secret parent passcode and configure your kids' profiles to start their Python adventure.";
-    loginSection.style.display = "none";
-    setupSection.style.display = "block";
-    submitBtn.innerText = "Complete Onboarding";
-    submitBtn.onclick = setupAdminPassword;
-    document.getElementById("admin-passcode-setup-1").focus();
-  } else {
-    // Standard verification mode
-    title.innerText = "Enter Admin Passcode";
-    desc.innerText = "Please type your parent passcode to access the tracking logs and settings.";
-    loginSection.style.display = "block";
-    setupSection.style.display = "none";
-    submitBtn.innerText = "Unlock";
-    submitBtn.onclick = verifyAdminPassword;
-    document.getElementById("admin-passcode-input").focus();
-  }
-}
-
-function closeAdminPasswordModal() {
-  document.getElementById("admin-password-modal").classList.remove("active");
-}
-
-function handleAdminPasswordKey(event) {
-  if (event.key === "Enter") {
-    verifyAdminPassword();
-  }
-}
-
-function handleAdminSetupKey(event) {
-  if (event.key === "Enter") {
-    setupAdminPassword();
-  }
-}
-
-function setupAdminPassword() {
-  const pin1 = document.getElementById("admin-passcode-setup-1").value.trim();
-  const pin2 = document.getElementById("admin-passcode-setup-2").value.trim();
-  
-  if (pin1.length < 4) {
-    document.getElementById("admin-passcode-error").innerText = "Passcode must be at least 4 characters!";
-    playSound('alert');
-    return;
-  }
-  
-  if (pin1 !== pin2) {
-    document.getElementById("admin-passcode-error").innerText = "Passcodes do not match! Try again.";
-    playSound('alert');
-    return;
-  }
-
-  const p1Name = document.getElementById("setup-p1-name").value.trim() || "Learner A";
-  const p1Age = document.getElementById("setup-p1-age").value.trim();
-  const p2Name = document.getElementById("setup-p2-name").value.trim() || "Learner B";
-  const p2Age = document.getElementById("setup-p2-age").value.trim();
-  
-  localStorage.setItem("python_tracker_admin_passcode", pin1);
-
-  // Initialize profiles with customized configurations
-  const p1Data = loadProfileData(1);
-  p1Data.displayName = p1Name;
-  p1Data.age = p1Age ? parseInt(p1Age) : null;
-  saveProfileData(1, p1Data);
-
-  const p2Data = loadProfileData(2);
-  p2Data.displayName = p2Name;
-  p2Data.age = p2Age ? parseInt(p2Age) : null;
-  saveProfileData(2, p2Data);
-
-  logActivity(null, `Completed parent onboarding. Configured profiles: ${p1Name} (Age: ${p1Age || 'N/A'}), ${p2Name} (Age: ${p2Age || 'N/A'})`);
-  
-  initProfileScreen(); // Refresh profile select screen labels
-  closeAdminPasswordModal();
-  openAdminDashboard();
-}
-
-function verifyAdminPassword() {
-  const pin = document.getElementById("admin-passcode-input").value;
-  const savedPin = localStorage.getItem("python_tracker_admin_passcode");
-  if (savedPin && pin === savedPin) {
-    closeAdminPasswordModal();
-    openAdminDashboard();
-  } else {
-    document.getElementById("admin-passcode-error").innerText = "Incorrect parent passcode! Try again.";
-    playSound('alert');
-  }
-}
-
-// Render Parent Panel values
-function openAdminDashboard() {
-  isAdminMode = true;
-  
-  // Fill student stats cards
-  for (let i = 1; i <= 2; i++) {
-    const data = loadProfileData(i);
-    document.getElementById(`admin-p${i}-name`).innerText = data.displayName;
-    document.getElementById(`admin-p${i}-xp`).innerText = `${data.xp} XP`;
-    document.getElementById(`admin-p${i}-rank`).innerText = getRankTitle(data.xp);
-    document.getElementById(`admin-p${i}-streak`).innerText = `${data.streak} days`;
-    document.getElementById(`admin-p${i}-shields`).innerText = `${data.shields} / 3`;
-    
-    // Count badge counts
-    let gold = 0, silver = 0, bronze = 0;
-    Object.values(data.completedDays).forEach(day => {
-      if (day.badge === 'gold') gold++;
-      else if (day.badge === 'silver') silver++;
-      else if (day.badge === 'bronze') bronze++;
-    });
-    
-    document.getElementById(`admin-p${i}-golds`).innerText = `🏆 ${gold}`;
-    document.getElementById(`admin-p${i}-silvers`).innerText = `🥈 ${silver}`;
-    document.getElementById(`admin-p${i}-bronzes`).innerText = `🥉 ${bronze}`;
-    
-    // Fill drop-down options for Code signoff list
-    fillAdminDaysDropdown(i, data);
-    
-    // Sync locks switches
-    document.getElementById(`admin-p${i}-lock-toggle`).checked = data.dailyLockChecked;
-    document.getElementById(`admin-p${i}-lock-label`).innerText = `Restrict ${data.displayName} to 1 lesson/day`;
-  }
-  
-  // Render Activity Log feed
-  renderActivityLogsList();
-  
-  // Render edit inputs
-  const p1Data = loadProfileData(1);
-  const p2Data = loadProfileData(2);
-  document.getElementById("p1-rename-input").value = p1Data.displayName;
-  document.getElementById("p1-age-input").value = p1Data.age || "";
-  document.getElementById("p2-rename-input").value = p2Data.displayName;
-  document.getElementById("p2-age-input").value = p2Data.age || "";
-  
-  // Open modal overlay
-  document.getElementById("parent-admin-modal").classList.add("active");
-  switchAdminTab('stats');
-}
-
-function closeAdminDashboard() {
-  document.getElementById("parent-admin-modal").classList.remove("active");
-}
-
-function switchAdminTab(tabId) {
-  // Tabs toggle
-  document.querySelectorAll(".admin-tab-btn").forEach(btn => btn.classList.remove("active"));
-  document.getElementById(`tab-btn-${tabId}`).classList.add("active");
-  
-  document.querySelectorAll(".admin-tab-content").forEach(content => content.classList.remove("active"));
-  document.getElementById(`admin-tab-${tabId}`).classList.add("active");
-}
-
-function fillAdminDaysDropdown(studentId, data) {
-  const select = document.getElementById(`admin-p${studentId}-select-day`);
-  select.innerHTML = '<option value="">-- Choose Completed Day --</option>';
-  
-  // List all completed days
-  Object.keys(data.completedDays).sort((a,b) => a-b).forEach(dayNum => {
-    const isSigned = data.completedDays[dayNum].parentSigned;
-    select.innerHTML += `<option value="${dayNum}">Day ${dayNum} ${isSigned ? '(Signed)' : '(Unsigned)'}</option>`;
-  });
-  
-  // Change listener to show code
-  select.onchange = function() {
-    const dayVal = select.value;
-    const view = document.getElementById(`admin-p${studentId}-code-viewer`);
-    if (dayVal && data.completedDays[dayVal]) {
-      view.value = data.completedDays[dayVal].code || "# Student did not save code vault backup for this day.";
-    } else {
-      view.value = "";
-    }
-  };
-}
-
-// Parent signoff action
-function adminSignoff(studentId) {
-  const select = document.getElementById(`admin-p${studentId}-select-day`);
-  const dayNum = select.value;
-  if (!dayNum) {
-    alert("Please select a day to sign off!");
-    return;
-  }
-  
-  const data = loadProfileData(studentId);
-  if (data.completedDays[dayNum].parentSigned) {
-    alert("This day is already signed off!");
-    return;
-  }
-  
-  // Perform Sign off
-  data.completedDays[dayNum].parentSigned = true;
-  data.completedDays[dayNum].tasks[3] = true; // Mark checklist sign-off checkbox
-  data.xp += 50; // Give parent signoff bonus XP!
-  
-  saveProfileData(studentId, data);
-  playSound('levelup');
-  
-  logActivity(studentId, `Parent signed off on Day ${dayNum} code and awarded +50 XP bonus!`);
-  
-  alert(`Successfully signed off on Day ${dayNum}! +50 XP awarded.`);
-  
-  // Refresh Admin View
-  openAdminDashboard();
-}
-
-function renderActivityLogsList() {
-  const ul = document.getElementById("admin-logs-ul");
-  ul.innerHTML = "";
-  
-  const logKey = "python_tracker_activity_log";
-  let logs = localStorage.getItem(logKey);
-  logs = logs ? JSON.parse(logs) : [];
-  
-  if (logs.length === 0) {
-    ul.innerHTML = `<li>No logs captured yet.</li>`;
-    return;
-  }
-  
-  logs.forEach(log => {
-    ul.innerHTML += `
-      <li>
-        <strong>[${log.timestamp}]</strong> - <em>${log.profileName}:</em> ${log.message}
-      </li>
-    `;
-  });
-}
-
-function clearActivityLogs() {
-  if (confirm("Are you sure you want to clear all activity history logs?")) {
-    localStorage.removeItem("python_tracker_activity_log");
-    renderActivityLogsList();
-  }
-}
-
-function toggleDailyLock(studentId) {
-  const chk = document.getElementById(`admin-p${studentId}-lock-toggle`);
-  const data = loadProfileData(studentId);
-  data.dailyLockChecked = chk.checked;
-  saveProfileData(studentId, data);
-  
-  logActivity(studentId, `Parent toggled daily locks restriction to: ${chk.checked}`);
-}
-
-function saveProfileConfig(studentId) {
-  const nameInput = document.getElementById(`p${studentId}-rename-input`);
-  const ageInput = document.getElementById(`p${studentId}-age-input`);
-  
-  const newName = nameInput.value.trim();
-  const newAge = ageInput.value.trim();
-  
-  if (!newName) {
-    alert("Name cannot be empty!");
-    return;
-  }
-  
-  const data = loadProfileData(studentId);
-  const oldName = data.displayName;
-  data.displayName = newName;
-  data.age = newAge ? parseInt(newAge) : null;
-  saveProfileData(studentId, data);
-  
-  logActivity(studentId, `Parent updated profile config: '${oldName}' to '${newName}' (Age: ${newAge || 'N/A'})`);
-  alert("Profile configuration saved successfully!");
-  openAdminDashboard();
-  initProfileScreen(); // Refresh select screen
-}
-
-function fullDataReset() {
-  if (confirm("🚨 WARNING: This will permanently wipe all student files, streak counts, logs, and badge progress. This cannot be undone! Are you sure?")) {
-    localStorage.clear();
-    logoutProfile();
-    closeAdminDashboard();
-    initProfileScreen();
-    alert("System data cleared successfully.");
-  }
 }
 
 // ==========================================================================
